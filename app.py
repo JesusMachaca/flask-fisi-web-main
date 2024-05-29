@@ -1,21 +1,27 @@
 from flask import Flask, request, render_template, redirect, url_for, flash, session
 import datetime
-import pyodbc
+import psycopg2
+from psycopg2 import sql
 
 app = Flask(__name__)
 
 # SETTINGS
 app.secret_key = "mysecretkey"
 
-conn_str = (
-    "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=DESKTOP-L44MSJ2;"
-    "DATABASE=sistemas;"
-    "UID=sa;"
-    "PWD=1256"
-)
+# Configuración de la conexión para PostgreSQL
+conn_str = {
+    "host": "dpg-cpb9q3vsc6pc73a4r130-a.oregon-postgres.render.com",
+    "database": "fisi_web",
+    "user": "root",
+    "password": "YIpRMu5Sm0p56I6L6CWUeuia3DYr8Azm"
+}
 
-mydb = pyodbc.connect(conn_str)
+# Conectar a la base de datos PostgreSQL
+try:
+    mydb = psycopg2.connect(**conn_str)
+    print("Conexión exitosa a la base de datos PostgreSQL")
+except Exception as e:
+    print(f"No se pudo conectar a la base de datos PostgreSQL: {e}")
 
 global alumno
 alumno = None
@@ -39,7 +45,7 @@ def agregar_publicacion():
             contenido = request.form['contenido']
 
             cursor = mydb.cursor()
-            query = "INSERT INTO publicaciones (idAlumno, contenido, fecha) VALUES (?, ?, ?)"
+            query = "INSERT INTO publicaciones (idAlumno, contenido, fecha) VALUES (%s, %s, %s)"
             values = (idAlumno, contenido, fecha)
             cursor.execute(query, values)
             mydb.commit()
@@ -56,7 +62,7 @@ def agregar_publicacion():
 def registro_usuario():
     return render_template('registro-usuario.html')
 
-@app.route('/agregar-usuario', methods=['POST', 'GET'])
+@app.route('/agregar-usuario', methods=['POST'])
 def agregar_usuario():
     if request.method == 'POST':
         try:
@@ -66,7 +72,7 @@ def agregar_usuario():
             codigo = request.form['codigo']
 
             cursor = mydb.cursor()
-            query = "INSERT INTO alumnos (nombre, apellido, correo, codigo) VALUES (?, ?, ?, ?)"
+            query = "INSERT INTO alumnos (nombre, apellido, correo, codigo) VALUES (%s, %s, %s, %s)"
             values = (nombre, apellido, correo, codigo)
             cursor.execute(query, values)
             mydb.commit()
@@ -90,21 +96,20 @@ def login():
         correo = request.form['correo']
         codigo = request.form['codigo']
         cursor = mydb.cursor()
-        query = "SELECT * FROM alumnos WHERE correo = ? AND codigo = ?"
+        query = "SELECT * FROM alumnos WHERE correo = %s AND codigo = %s"
         values = (correo, codigo)
         cursor.execute(query, values)
         alumno = cursor.fetchone()
         cursor.close()
 
         if alumno:
-            # Obtener la fecha y hora actual
             fecha = str(datetime.datetime.now())
             
             try:
                 cursor = mydb.cursor()
                 idAlumno = alumno[0]
 
-                query = "INSERT INTO logs (idAlumno, fecha) VALUES (?, ?)"
+                query = "INSERT INTO logs (idAlumno, fecha) VALUES (%s, %s)"
                 values = (idAlumno, fecha)
                 cursor.execute(query, values)
                 mydb.commit()
@@ -132,7 +137,7 @@ def dashboard():
     global alumno
     publicaciones = None
     sesiones = None
-    if alumno != None:
+    if alumno is not None:
         idAlumno = alumno[0]
         publicaciones = consultarPublicaciones(idAlumno=idAlumno)
         sesiones = consultarSesiones(idAlumno=idAlumno)
@@ -159,7 +164,7 @@ def consultarPublicaciones(idAlumno):
         cursor = mydb.cursor()
         query = '''
             SELECT contenido, fecha
-            FROM publicaciones WHERE idAlumno = ?
+            FROM publicaciones WHERE idAlumno = %s
         '''
         values = (idAlumno,)
         cursor.execute(query, values)
@@ -175,7 +180,7 @@ def consultarSesiones(idAlumno):
         cursor = mydb.cursor()
         query = '''
             SELECT idLog, fecha
-            FROM logs WHERE idAlumno = ?
+            FROM logs WHERE idAlumno = %s
         '''
         values = (idAlumno,)
         cursor.execute(query, values)
@@ -188,14 +193,14 @@ def consultarSesiones(idAlumno):
 
 def getAlumnos():
     try:
-
         cursor = mydb.cursor()
-        cursor.execute("SELECT idAlumno,nombre,apellido,correo, codigo,imagen,imagenEncoding FROM alumnos")
+        cursor.execute("SELECT idAlumno, nombre, apellido, correo, codigo, imagen, imagenEncoding FROM alumnos")
         alumnos = cursor.fetchall()
         cursor.close()
         return alumnos
-    except:
-        return None        
+    except Exception as e:
+        flash(f"Error al consultar alumnos: {e}")
+        return None
 
 if __name__ == '__main__':
     app.run(port=3000, debug=True)
